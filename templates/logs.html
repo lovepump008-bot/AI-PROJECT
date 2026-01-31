@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}ประวัติการเข้าเรียน - Smart Scan Face{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>ประวัติการเข้าเรียน</h1>
+    <p>ดู Log การเช็คชื่อเข้าเรียนทั้งหมด</p>
+</div>
+
+<!-- Filter -->
+<div class="card">
+    <div class="grid grid-3">
+        <div class="form-group">
+            <label class="form-label">กรองตามวิชา:</label>
+            <select id="filterClass" class="form-control" onchange="loadLogs()">
+                <option value="">ทั้งหมด</option>
+                <option value="AI ปัญญาประดิษฐ์">AI ปัญญาประดิษฐ์</option>
+                <option value="Computer Vision">Computer Vision</option>
+                <option value="Machine Learning">Machine Learning</option>
+                <option value="Deep Learning">Deep Learning</option>
+                <option value="Data Science">Data Science</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">เลือกวันที่:</label>
+            <input type="date" id="filterDate" class="form-control date-filter-input" onchange="loadLogs()">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">&nbsp;</label>
+            <button class="btn btn-primary" onclick="loadLogs()" style="width: 100%;">
+                รีเฟรช
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📊 สรุปวันนี้</h2>
+    </div>
+    <div class="grid grid-3">
+        <div class="summary-card">
+            <h3 id="todayCount">0</h3>
+            <p>คนเข้าเรียน</p>
+        </div>
+        <div class="summary-card">
+            <h3 id="lastCheckIn" style="font-size: 1.3rem;">-</h3>
+            <p>เข้าเรียนล่าสุด</p>
+        </div>
+        <div class="summary-card">
+            <h3 id="todayDate" style="font-size: 1.1rem;">-</h3>
+            <p>วันที่</p>
+        </div>
+    </div>
+</div>
+
+<!-- Logs List -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title"> รายการเข้าเรียน</h2>
+    </div>
+
+    <div id="logsContainer">
+    </div>
+
+    <div id="emptyState" class="empty-state hidden">
+        <div class="empty-state-icon">📝</div>
+        <h3>ยังไม่มีการเข้าเรียน</h3>
+        <p>ยังไม่มีนักศึกษาเช็คชื่อในวันนี้</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // ตั้งค่าเริ่มต้นเป็นวันนี้
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        document.getElementById('filterDate').value = `${yyyy}-${mm}-${dd}`;
+        
+        loadLogs();
+        document.getElementById('todayDate').textContent =
+            new Date().toLocaleDateString('th-TH', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+        // Auto refresh ทุก 30 วินาที
+        setInterval(loadLogs, 30000);
+    });
+
+    async function loadLogs() {
+        const dateFilter = document.getElementById('filterDate').value;
+        const className = document.getElementById('filterClass').value;
+
+        let url = '/api/logs';
+        const params = new URLSearchParams();
+        
+        if (dateFilter) {
+            params.append('date', dateFilter);
+        }
+        if (className) {
+            params.append('class_name', className);
+        }
+        
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
+
+        try {
+            const response = await fetch(url);
+            const result = await response.json();
+
+            if (result.success) {
+                renderLogs(result.data);
+                updateSummary(result.data);
+            }
+        } catch (error) {
+            console.error('Error loading logs:', error);
+        }
+    }
+
+    function renderLogs(logs) {
+        const container = document.getElementById('logsContainer');
+        const emptyState = document.getElementById('emptyState');
+
+        if (logs.length === 0) {
+            container.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            return;
+        }
+
+        emptyState.classList.add('hidden');
+
+        container.innerHTML = logs.map(log => {
+            const checkInTime = new Date(log.check_in_time);
+            const timeInStr = checkInTime.toLocaleTimeString('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const dateStr = checkInTime.toLocaleDateString('th-TH');
+            
+            // เวลาออก (ถ้ามี)
+            let timeOutStr = '-';
+            if (log.check_out_time) {
+                const checkOutTime = new Date(log.check_out_time);
+                timeOutStr = checkOutTime.toLocaleTimeString('th-TH', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+            }
+
+            const name = log.first_name && log.last_name
+                ? `${log.first_name} ${log.last_name}`
+                : 'ไม่ระบุชื่อ';
+
+            const studentId = log.student_id || 'ไม่ระบุรหัส';
+            
+            // สถานะ badge
+            const statusClass = log.status === 'checked_out' ? 'checked-out' : 'checked-in';
+            const statusText = log.status === 'checked_out' ? 'เช็คออกแล้ว' : 'อยู่ในชั้นเรียน';
+            
+            // รูปใบหน้า
+            const faceImage = log.face_image_path 
+                ? `<img src="${log.face_image_path}" alt="Face" class="log-face-image">` 
+                : `<div class="log-face-placeholder">👤</div>`;
+
+            return `
+                <div class="log-entry-with-image">
+                    ${faceImage}
+                    <div class="log-details">
+                        <div class="log-time">
+                            ${dateStr}
+                            <span class="log-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="log-name">${name}</div>
+                        <div>รหัสนักศึกษา: ${studentId}</div>
+                        <div class="log-class">วิชา: ${log.class_name}</div>
+                        <div style="margin-top: 8px; font-size: 0.9rem;">
+                            ⏰ เข้า: <strong>${timeInStr}</strong>
+                            ${log.check_out_time ? ` | 🚪 ออก: <strong>${timeOutStr}</strong>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updateSummary(logs) {
+        const today = new Date().toDateString();
+        const todayLogs = logs.filter(log =>
+            new Date(log.check_in_time).toDateString() === today
+        );
+
+        document.getElementById('todayCount').textContent = todayLogs.length;
+
+        if (logs.length > 0) {
+            const latestLog = logs[0];
+            const name = latestLog.first_name && latestLog.last_name
+                ? `${latestLog.first_name} ${latestLog.last_name}`
+                : 'ไม่ระบุชื่อ';
+            document.getElementById('lastCheckIn').textContent = name;
+        } else {
+            document.getElementById('lastCheckIn').textContent = '-';
+        }
+    }
+</script>
+{% endblock %}

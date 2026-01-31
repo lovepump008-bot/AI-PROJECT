@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}เช็คชื่อเข้าเรียน - Smart Scan Face{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>เช็คชื่อเข้าเรียน</h1>
+    <p>สแกนใบหน้าของคุณเพื่อเช็คชื่อเข้าเรียน</p>
+</div>
+
+<div class="card">
+    <!-- Scan Mode Tabs -->
+    <div class="scan-tabs">
+        <button class="scan-tab active" onclick="switchScanMode('camera')">
+            📷 ใช้กล้อง
+        </button>
+        <button class="scan-tab" onclick="switchScanMode('upload')">
+            อัพโหลดรูป
+        </button>
+    </div>
+
+    <!-- Camera Mode -->
+    <div id="cameraMode" class="scan-content active">
+        <div class="camera-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvasElement" style="display: none;"></canvas>
+            <div class="camera-overlay"></div>
+        </div>
+    </div>
+
+    <!-- Upload Mode -->
+    <div id="uploadMode" class="scan-content">
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+            <div id="uploadPlaceholder">
+                <div class="upload-icon">📷</div>
+                <h3>คลิกเพื่อเลือกรูปภาพ</h3>
+                <p>รองรับไฟล์ JPG, PNG</p>
+            </div>
+            <div id="previewWrapper" class="preview-wrapper hidden">
+                <img id="previewImage" src="" alt="Preview">
+                <div class="preview-actions">
+                    <button type="button" class="btn btn-secondary" onclick="clearUploadPreview(event)">
+                        เปลี่ยนรูป
+                    </button>
+                </div>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+        </div>
+    </div>
+
+    <!-- Class Selection -->
+    <div class="form-group mt-20">
+        <label class="form-label">เลือกวิชา:</label>
+        <select id="classSelect" class="form-control">
+            <option value="AI ปัญญาประดิษฐ์">AI ปัญญาประดิษฐ์</option>
+        </select>
+    </div>
+
+    <!-- Scan Buttons (Check-in / Check-out) -->
+    <div class="scan-type-buttons">
+        <button id="checkinBtn" class="btn btn-checkin btn-lg" onclick="checkAttendance('check_in')">
+            ✅ สแกนเข้าเรียน
+        </button>
+        <button id="checkoutBtn" class="btn btn-checkout btn-lg" onclick="checkAttendance('check_out')">
+            🚪 สแกนออก
+        </button>
+    </div>
+
+    <!-- Result Display -->
+    <div id="resultContainer" class="result-container">
+        <div class="result-icon" id="resultIcon">✓</div>
+        <div class="result-success">
+            <h2 id="resultTitle">เช็คชื่อสำเร็จ!</h2>
+            <p class="text-muted" id="resultSubtitle">บันทึกข้อมูลเรียบร้อยแล้ว</p>
+        </div>
+        <div id="resultFaceImage" style="text-align: center; margin: 15px 0; display: none;">
+            <img id="capturedFace" src="" alt="Captured Face" style="width: 120px; height: 120px; border-radius: 12px; object-fit: cover; border: 3px solid #10b981;">
+        </div>
+        <div class="result-info">
+            <div class="result-info-item">
+                <span class="result-info-label">ชื่อ-นามสกุล</span>
+                <span class="result-info-value" id="resultName">-</span>
+            </div>
+            <div class="result-info-item">
+                <span class="result-info-label">รหัสนักศึกษา</span>
+                <span class="result-info-value" id="resultStudentId">-</span>
+            </div>
+            <div class="result-info-item">
+                <span class="result-info-label">วิชา</span>
+                <span class="result-info-value" id="resultClass">-</span>
+            </div>
+            <div class="result-info-item">
+                <span class="result-info-label" id="resultTimeLabel">เวลา</span>
+                <span class="result-info-value" id="resultTime">-</span>
+            </div>
+            <div class="result-info-item">
+                <span class="result-info-label">วันที่</span>
+                <span class="result-info-value" id="resultDate">-</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/camera.js"></script>
+<script>
+    let currentMode = 'camera';
+    let uploadedImageData = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initCamera('videoElement');
+    });
+
+    // สลับโหมดกล้อง/อัพโหลด
+    function switchScanMode(mode) {
+        currentMode = mode;
+
+        document.querySelectorAll('.scan-tab').forEach(tab => tab.classList.remove('active'));
+        event.target.closest('.scan-tab').classList.add('active');
+
+        document.getElementById('cameraMode').classList.remove('active');
+        document.getElementById('uploadMode').classList.remove('active');
+
+        if (mode === 'camera') {
+            document.getElementById('cameraMode').classList.add('active');
+            initCamera('videoElement');
+        } else {
+            document.getElementById('uploadMode').classList.add('active');
+            stopCamera();
+        }
+
+        document.getElementById('resultContainer').classList.remove('show');
+    }
+
+    // เลือกไฟล์รูปภาพ
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedImageData = e.target.result;
+                document.getElementById('previewImage').src = uploadedImageData;
+                document.getElementById('uploadPlaceholder').classList.add('hidden');
+                document.getElementById('previewWrapper').classList.remove('hidden');
+                document.getElementById('uploadArea').classList.add('has-image');
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // ล้าง preview
+    function clearUploadPreview(event) {
+        event.stopPropagation();
+        uploadedImageData = null;
+        document.getElementById('fileInput').value = '';
+        document.getElementById('previewImage').src = '';
+        document.getElementById('uploadPlaceholder').classList.remove('hidden');
+        document.getElementById('previewWrapper').classList.add('hidden');
+        document.getElementById('uploadArea').classList.remove('has-image');
+    }
+
+    // เช็คชื่อเข้า/ออก
+    async function checkAttendance(scanType) {
+        const checkinBtn = document.getElementById('checkinBtn');
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const className = document.getElementById('classSelect').value;
+        
+        const isCheckIn = scanType === 'check_in';
+        const activeBtn = isCheckIn ? checkinBtn : checkoutBtn;
+        const originalText = isCheckIn ? '✅ สแกนเข้าเรียน' : '🚪 สแกนออก';
+
+        checkinBtn.disabled = true;
+        checkoutBtn.disabled = true;
+        activeBtn.innerHTML = '<span class="spinner"></span> กำลังประมวลผล...';
+
+        document.getElementById('resultContainer').classList.remove('show');
+
+        try {
+            let imageData;
+
+            if (currentMode === 'camera') {
+                imageData = captureImage('videoElement', 'canvasElement');
+            } else {
+                if (!uploadedImageData) {
+                    showToast('warning', 'กรุณาเลือกรูปภาพก่อน');
+                    resetButtons();
+                    return;
+                }
+                imageData = uploadedImageData;
+            }
+
+            const response = await fetch('/api/check-attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image_base64: imageData,
+                    class_name: className,
+                    scan_type: scanType
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                // อัพเดท UI ตามประเภทการสแกน
+                if (result.scan_type === 'check_out') {
+                    document.getElementById('resultIcon').textContent = '🚪';
+                    document.getElementById('resultIcon').style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+                    document.getElementById('resultTitle').textContent = 'เช็คออกสำเร็จ!';
+                    document.getElementById('resultTimeLabel').textContent = 'เวลาออก';
+                    document.getElementById('resultTime').textContent = result.data.check_out_time;
+                } else {
+                    document.getElementById('resultIcon').textContent = '✓';
+                    document.getElementById('resultIcon').style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                    document.getElementById('resultTitle').textContent = 'เช็คเข้าสำเร็จ!';
+                    document.getElementById('resultTimeLabel').textContent = 'เวลาเข้า';
+                    document.getElementById('resultTime').textContent = result.data.check_in_time;
+                }
+                
+                document.getElementById('resultName').textContent = result.data.student_name;
+                document.getElementById('resultStudentId').textContent = result.data.student_id;
+                document.getElementById('resultClass').textContent = result.data.class_name;
+                document.getElementById('resultDate').textContent = result.data.date;
+                
+                // แสดงรูปใบหน้าที่สแกน
+                if (result.data.face_image) {
+                    document.getElementById('capturedFace').src = result.data.face_image;
+                    document.getElementById('resultFaceImage').style.display = 'block';
+                }
+                
+                document.getElementById('resultContainer').classList.add('show');
+                showToast('success', result.message);
+            } else {
+                showToast('error', result.detail || 'เกิดข้อผิดพลาด');
+            }
+
+        } catch (error) {
+            showToast('error', 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+            console.error(error);
+        }
+
+        resetButtons();
+    }
+    
+    function resetButtons() {
+        document.getElementById('checkinBtn').disabled = false;
+        document.getElementById('checkoutBtn').disabled = false;
+        document.getElementById('checkinBtn').innerHTML = '✅ สแกนเข้าเรียน';
+        document.getElementById('checkoutBtn').innerHTML = '🚪 สแกนออก';
+    }
+</script>
+{% endblock %}

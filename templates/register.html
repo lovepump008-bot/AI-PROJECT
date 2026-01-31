@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}ลงทะเบียนใบหน้า - Smart Scan Face{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>ลงทะเบียนใบหน้า</h1>
+    <p>สแกนใบหน้าหรืออัพโหลดรูปภาพเพื่อลงทะเบียนในระบบ</p>
+</div>
+
+<div class="card">
+    <!-- Scan Mode Tabs -->
+    <div class="scan-tabs">
+        <button class="scan-tab active" onclick="switchRegisterMode('camera')">
+            📷 ใช้กล้อง
+        </button>
+        <button class="scan-tab" onclick="switchRegisterMode('upload')">
+            อัพโหลดรูป
+        </button>
+    </div>
+
+    <!-- Camera Mode -->
+    <div id="cameraMode" class="scan-content active">
+        <div class="camera-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvasElement" style="display: none;"></canvas>
+            <div class="camera-overlay"></div>
+        </div>
+        <div class="action-buttons">
+            <button id="captureBtn" class="btn btn-primary btn-lg" onclick="registerFromCamera()">
+                📸 ถ่ายภาพลงทะเบียน
+            </button>
+        </div>
+    </div>
+
+    <!-- Upload Mode -->
+    <div id="uploadMode" class="scan-content">
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+            <div id="uploadPlaceholder">
+                <div class="upload-icon">📷</div>
+                <h3>คลิกเพื่อเลือกรูปภาพ</h3>
+                <p>รองรับไฟล์ JPG, PNG</p>
+                <p class="text-muted" style="margin-top: 8px; font-size: 0.85rem;">รูปภาพควรเห็นใบหน้าชัดเจน</p>
+            </div>
+            <div id="previewWrapper" class="preview-wrapper hidden">
+                <img id="previewImage" src="" alt="Preview">
+                <div class="preview-actions">
+                    <button type="button" class="btn btn-primary" onclick="registerFromUpload(event)">
+                        ✓ ลงทะเบียนรูปนี้
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="clearUploadPreview(event)">
+                        เปลี่ยนรูป
+                    </button>
+                </div>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+        </div>
+    </div>
+</div>
+
+<!-- Instructions Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">คำแนะนำ</h2>
+    </div>
+    <ul class="instructions-list">
+        <li>ถ่ายภาพในที่แสงสว่างเพียงพอ</li>
+        <li>หันหน้าตรงไปที่กล้อง</li>
+        <li>ไม่สวมแว่นกันแดดหรือหมวก</li>
+        <li>ให้มีแค่ใบหน้าของคุณในภาพ (1 คนเท่านั้น)</li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/camera.js"></script>
+<script>
+    let currentMode = 'camera';
+    let uploadedImageData = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initCamera('videoElement');
+    });
+
+    // สลับโหมด
+    function switchRegisterMode(mode) {
+        currentMode = mode;
+
+        document.querySelectorAll('.scan-tab').forEach(tab => tab.classList.remove('active'));
+        event.target.closest('.scan-tab').classList.add('active');
+
+        document.getElementById('cameraMode').classList.remove('active');
+        document.getElementById('uploadMode').classList.remove('active');
+
+        if (mode === 'camera') {
+            document.getElementById('cameraMode').classList.add('active');
+            initCamera('videoElement');
+        } else {
+            document.getElementById('uploadMode').classList.add('active');
+            stopCamera();
+        }
+    }
+
+    // เลือกไฟล์
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedImageData = e.target.result;
+                document.getElementById('previewImage').src = uploadedImageData;
+                document.getElementById('uploadPlaceholder').classList.add('hidden');
+                document.getElementById('previewWrapper').classList.remove('hidden');
+                document.getElementById('uploadArea').classList.add('has-image');
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // ล้าง preview
+    function clearUploadPreview(event) {
+        event.stopPropagation();
+        uploadedImageData = null;
+        document.getElementById('fileInput').value = '';
+        document.getElementById('previewImage').src = '';
+        document.getElementById('uploadPlaceholder').classList.remove('hidden');
+        document.getElementById('previewWrapper').classList.add('hidden');
+        document.getElementById('uploadArea').classList.remove('has-image');
+    }
+
+    // ลงทะเบียนจากกล้อง
+    async function registerFromCamera() {
+        const btn = document.getElementById('captureBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> กำลังประมวลผล...';
+
+        try {
+            const imageData = captureImage('videoElement', 'canvasElement');
+
+            const response = await fetch('/api/register-face', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_base64: imageData })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('success', result.message + ' (ID: ' + result.student_db_id + ')');
+            } else {
+                showToast('error', result.detail || 'เกิดข้อผิดพลาด');
+            }
+
+        } catch (error) {
+            showToast('error', 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+            console.error(error);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '📸 ถ่ายภาพลงทะเบียน';
+    }
+
+    // ลงทะเบียนจากรูปอัพโหลด
+    async function registerFromUpload(event) {
+        event.stopPropagation();
+
+        if (!uploadedImageData) {
+            showToast('warning', 'กรุณาเลือกรูปภาพก่อน');
+            return;
+        }
+
+        const btns = document.querySelectorAll('#previewWrapper .btn-primary');
+        btns.forEach(btn => {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> กำลังประมวลผล...';
+        });
+
+        try {
+            const response = await fetch('/api/register-face', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_base64: uploadedImageData })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('success', result.message + ' (ID: ' + result.student_db_id + ')');
+                clearUploadPreview(event);
+            } else {
+                showToast('error', result.detail || 'เกิดข้อผิดพลาด');
+            }
+
+        } catch (error) {
+            showToast('error', 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+            console.error(error);
+        }
+
+        btns.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = '✓ ลงทะเบียนรูปนี้';
+        });
+    }
+</script>
+{% endblock %}

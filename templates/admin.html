@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}จัดการข้อมูลนักศึกษา - Smart Scan Face{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>จัดการข้อมูลนักศึกษา</h1>
+    <p>เพิ่ม แก้ไข ลบ ข้อมูลนักศึกษาในระบบ</p>
+</div>
+
+<!-- Student Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📋 รายชื่อนักศึกษาทั้งหมด</h2>
+    </div>
+
+    <div class="table-container">
+        <table id="studentTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>รหัสนักศึกษา</th>
+                    <th>ชื่อ</th>
+                    <th>นามสกุล</th>
+                    <th>วันที่ลงทะเบียน</th>
+                    <th>สถานะ</th>
+                    <th>จัดการ</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="emptyState" class="empty-state hidden">
+        <div class="empty-state-icon">📋</div>
+        <h3>ยังไม่มีข้อมูลนักศึกษา</h3>
+        <p>กรุณาให้นักศึกษาลงทะเบียนใบหน้าก่อน</p>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>แก้ไขข้อมูลนักศึกษา</h3>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+
+        <form id="editForm" onsubmit="saveStudent(event)">
+            <input type="hidden" id="editId">
+
+            <div class="form-group">
+                <label class="form-label">รหัสนักศึกษา</label>
+                <input type="text" id="editStudentId" class="form-control" required
+                       placeholder="เช่น 6501234567">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">ชื่อ</label>
+                <input type="text" id="editFirstName" class="form-control" required
+                       placeholder="ชื่อจริง">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">นามสกุล</label>
+                <input type="text" id="editLastName" class="form-control" required
+                       placeholder="นามสกุล">
+            </div>
+
+            <div class="action-buttons">
+                <button type="submit" class="btn btn-success">💾 บันทึก</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">ยกเลิก</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>ยืนยันการลบ</h3>
+            <button class="modal-close" onclick="closeDeleteModal()">×</button>
+        </div>
+
+        <p>คุณต้องการลบข้อมูลนักศึกษานี้หรือไม่?</p>
+        <p><strong id="deleteStudentName"></strong></p>
+
+        <input type="hidden" id="deleteId">
+
+        <div class="action-buttons mt-20">
+            <button class="btn btn-danger" onclick="confirmDelete()">🗑️ ลบ</button>
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">ยกเลิก</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', loadStudents);
+
+    async function loadStudents() {
+        try {
+            const response = await fetch('/api/students');
+            const result = await response.json();
+
+            if (result.success) {
+                renderStudentTable(result.data);
+            }
+        } catch (error) {
+            showToast('error', 'ไม่สามารถโหลดข้อมูลได้');
+            console.error(error);
+        }
+    }
+
+    function renderStudentTable(students) {
+        const tbody = document.getElementById('studentTableBody');
+        const emptyState = document.getElementById('emptyState');
+
+        if (students.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            return;
+        }
+
+        emptyState.classList.add('hidden');
+
+        tbody.innerHTML = students.map(student => {
+            const hasData = student.student_id && student.first_name && student.last_name;
+            const statusBadge = hasData
+                ? '<span class="badge badge-success">ข้อมูลครบ</span>'
+                : '<span class="badge badge-warning">รอกรอกข้อมูล</span>';
+
+            const displayName = student.first_name || '-';
+            const displayLastName = student.last_name || '-';
+            const displayStudentId = student.student_id || '-';
+            const createdDate = new Date(student.created_at).toLocaleDateString('th-TH');
+
+            return `
+                <tr>
+                    <td>${student.id}</td>
+                    <td>${displayStudentId}</td>
+                    <td>${displayName}</td>
+                    <td>${displayLastName}</td>
+                    <td>${createdDate}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn btn-primary" style="padding: 8px 14px; font-size: 0.85rem;" onclick="openEditModal(${student.id})">
+                            แก้ไข
+                        </button>
+                        <button class="btn btn-danger" style="padding: 8px 14px; font-size: 0.85rem;" onclick="openDeleteModal(${student.id}, '${displayName} ${displayLastName}')">
+                            ลบ
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function openEditModal(id) {
+        try {
+            const response = await fetch(`/api/students/${id}`);
+            const result = await response.json();
+
+            if (result.success) {
+                const student = result.data;
+                document.getElementById('editId').value = student.id;
+                document.getElementById('editStudentId').value = student.student_id || '';
+                document.getElementById('editFirstName').value = student.first_name || '';
+                document.getElementById('editLastName').value = student.last_name || '';
+
+                document.getElementById('editModal').classList.add('show');
+            }
+        } catch (error) {
+            showToast('error', 'ไม่สามารถโหลดข้อมูลได้');
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').classList.remove('show');
+    }
+
+    async function saveStudent(event) {
+        event.preventDefault();
+
+        const id = document.getElementById('editId').value;
+        const data = {
+            student_id: document.getElementById('editStudentId').value,
+            first_name: document.getElementById('editFirstName').value,
+            last_name: document.getElementById('editLastName').value
+        };
+
+        try {
+            const response = await fetch(`/api/students/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('success', 'บันทึกข้อมูลสำเร็จ');
+                closeModal();
+                loadStudents();
+            } else {
+                showToast('error', result.detail || 'เกิดข้อผิดพลาด');
+            }
+        } catch (error) {
+            showToast('error', 'ไม่สามารถบันทึกข้อมูลได้');
+        }
+    }
+
+    function openDeleteModal(id, name) {
+        document.getElementById('deleteId').value = id;
+        document.getElementById('deleteStudentName').textContent = name;
+        document.getElementById('deleteModal').classList.add('show');
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').classList.remove('show');
+    }
+
+    async function confirmDelete() {
+        const id = document.getElementById('deleteId').value;
+
+        try {
+            const response = await fetch(`/api/students/${id}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('success', 'ลบข้อมูลสำเร็จ');
+                closeDeleteModal();
+                loadStudents();
+            } else {
+                showToast('error', result.detail || 'เกิดข้อผิดพลาด');
+            }
+        } catch (error) {
+            showToast('error', 'ไม่สามารถลบข้อมูลได้');
+        }
+    }
+</script>
+{% endblock %}

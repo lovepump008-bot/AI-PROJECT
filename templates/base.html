@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Scan Face{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="container">
+            <a href="/" class="navbar-brand">Smart Scan Face</a>
+            <ul class="navbar-nav">
+                <li><a href="/" class="{% if request.url.path == '/' %}active{% endif %}">เช็คชื่อ</a></li>
+                <li><a href="/register" class="{% if request.url.path == '/register' %}active{% endif %}">ลงทะเบียน</a></li>
+                <li><a href="/admin" class="{% if request.url.path == '/admin' %}active{% endif %}">จัดการข้อมูล</a></li>
+                <li><a href="/logs" class="{% if request.url.path == '/logs' %}active{% endif %}">ประวัติ</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Real-time Clock (Thailand Time) -->
+    <div class="datetime-display" id="datetimeDisplay">
+        <div class="datetime-date" id="currentDate"></div>
+        <div class="datetime-time" id="currentTime"></div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Real-time Clock Script -->
+    <script>
+        // นาฬิกาเรียลไทม์แสดงเวลาประเทศไทย
+        function updateDateTime() {
+            const now = new Date();
+            const options = { timeZone: 'Asia/Bangkok' };
+            
+            // วันที่
+            const dateOptions = { 
+                timeZone: 'Asia/Bangkok',
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            };
+            const dateStr = now.toLocaleDateString('th-TH', dateOptions);
+            
+            // เวลา
+            const timeOptions = { 
+                timeZone: 'Asia/Bangkok',
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: false
+            };
+            const timeStr = now.toLocaleTimeString('th-TH', timeOptions);
+            
+            document.getElementById('currentDate').textContent = dateStr;
+            document.getElementById('currentTime').textContent = timeStr + ' น.';
+        }
+        
+        // อัพเดททุกวินาที
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+    </script>
+
+    <!-- Toast Notification Script -->
+    <script>
+        // ระบบแจ้งเตือน Toast Notification
+        function showToast(type, message, duration = 4000) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+
+            const icons = {
+                success: '✓',
+                error: '✕',
+                warning: '⚠'
+            };
+
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || '●'}</span>
+                <span>${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+            `;
+
+            container.appendChild(toast);
+
+            // Auto remove
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+    </script>
+
+    <!-- JavaScript -->
+    {% block scripts %}{% endblock %}
+</body>
+</html>
